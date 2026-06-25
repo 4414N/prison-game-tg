@@ -2,57 +2,96 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Тюряга: Возрождение</title>
-    <!-- Подключаем скрипт Telegram Web App -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #f0f0f0;
+            --panel-bg: #2a2a2a;
+        }
         body {
-            font-family: Arial, sans-serif;
-            background-color: var(--tg-theme-bg-color, #222);
-            color: var(--tg-theme-text-color, #fff);
-            text-align: center;
+            font-family: 'Courier New', Courier, monospace; /* Более "тюремный" шрифт */
+            background-color: var(--bg-color);
+            color: var(--text-color);
             margin: 0;
             padding: 0;
+            user-select: none; /* Запрещаем выделение текста */
         }
         .header {
-            background-color: var(--tg-theme-secondary-bg-color, #333);
+            background-color: var(--panel-bg);
             padding: 10px;
-            border-bottom: 2px solid #555;
+            border-bottom: 3px solid #444;
+            text-align: center;
         }
         .stats {
             display: flex;
             justify-content: space-around;
             margin-top: 10px;
-            font-weight: bold;
-        }
-        .cell-image {
-            width: 100%;
-            height: 250px;
-            background-color: #444; /* Сюда потом вставим картинку камеры */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-bottom: 2px solid #555;
-        }
-        .action-btn {
-            background-color: var(--tg-theme-button-color, #d32f2f);
-            color: var(--tg-theme-button-text-color, #fff);
-            border: none;
-            padding: 15px 20px;
             font-size: 18px;
             font-weight: bold;
+        }
+        /* Блок с хатой и зеком */
+        .game-screen {
+            position: relative;
+            width: 100%;
+            height: 300px;
+            background-image: url('hata.png'); /* Фон хаты */
+            background-size: cover;
+            background-position: center;
+            border-bottom: 3px solid #444;
+            overflow: hidden;
+        }
+        /* Наш персонаж */
+        .zek {
+            position: absolute;
+            bottom: -10px; /* Чтобы немного "срезать" ноги, если картинка в полный рост */
+            left: 50%;
+            transform: translateX(-50%);
+            height: 85%; /* Высота зека относительно хаты */
+            z-index: 10;
+        }
+        /* Панель управления */
+        .controls {
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .boss-panel {
+            background-color: #4a1c1c;
+            padding: 10px;
             border-radius: 8px;
-            margin-top: 20px;
-            width: 80%;
+            text-align: center;
+            border: 1px solid #ff4444;
+        }
+        .btn {
+            background-color: #555;
+            color: #fff;
+            border: 2px solid #777;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
             cursor: pointer;
+            width: 100%;
+            text-transform: uppercase;
+        }
+        .btn:active {
+            background-color: #333; /* Эффект нажатия */
+            transform: scale(0.98);
+        }
+        .btn-attack {
+            background-color: #8b0000;
+            border-color: #ff0000;
         }
     </style>
 </head>
 <body>
 
     <div class="header">
-        <h2 id="username">Зек...</h2>
+        <h2 id="username" style="margin: 0;">Бродяга</h2>
         <div class="stats">
             <div>👑 <span id="auth">0</span></div>
             <div>🚬 <span id="cigs">0</span></div>
@@ -60,44 +99,104 @@
         </div>
     </div>
 
-    <div class="cell-image">
-        <p>[Здесь будет арт камеры и твоего персонажа]</p>
+    <div class="game-screen">
+        <img src="zek.png" alt="Зек" class="zek" id="zek-image">
     </div>
 
-    <button class="action-btn" onclick="doJob()">Сделать ходку (-10 ⚡)</button>
+    <div class="controls">
+        <button class="btn" onclick="doJob()">🚶‍♂️ Шмонать нычки (-10 ⚡)</button>
+        
+        <div class="boss-panel">
+            <h3 style="margin: 0 0 10px 0;">Босс: Кирпич</h3>
+            <p style="margin: 0 0 10px 0;">ХП: <span id="boss-hp">500</span></p>
+            <button class="btn btn-attack" onclick="hitBoss()">👊 Втащить боссу (-5 ⚡)</button>
+        </div>
+    </div>
 
     <script>
-        // Инициализируем Telegram Web App
+        // Инициализация Telegram
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Разворачиваем на весь экран
-
-        // Получаем данные игрока из Telegram
+        tg.expand();
+        
         const user = tg.initDataUnsafe?.user;
         if (user) {
             document.getElementById('username').innerText = user.first_name;
         }
 
-        // Заглушка для механики (позже это будет идти через сервер)
+        // Загрузка звука (файл должен лежать рядом с index.html)
+        const hitSound = new Audio('hit.mp3');
+
+        // Игровые переменные
         let cigs = 0;
         let auth = 0;
         let energy = 100;
+        let bossHp = 500;
 
+        // Функция обновления текста на экране
+        function updateUI() {
+            document.getElementById('cigs').innerText = cigs;
+            document.getElementById('auth').innerText = auth;
+            document.getElementById('energy').innerText = energy;
+            document.getElementById('boss-hp').innerText = bossHp;
+        }
+
+        // Механика: Сделать ходку
         function doJob() {
             if (energy >= 10) {
                 energy -= 10;
                 cigs += 5;
-                auth += 2;
-                
-                document.getElementById('cigs').innerText = cigs;
-                document.getElementById('auth').innerText = auth;
-                document.getElementById('energy').innerText = energy;
-                
-                // Вибрация телефона при успешном действии!
-                tg.HapticFeedback.impactOccurred('medium'); 
+                auth += 1;
+                updateUI();
+                tg.HapticFeedback.impactOccurred('light');
             } else {
-                tg.showAlert("Браток, энергия на нуле. Жди.");
+                tg.showAlert("Браток, энергия на нуле. Надо перекурить.");
             }
         }
+
+        // Механика: Ударить босса
+        function hitBoss() {
+            if (bossHp <= 0) {
+                tg.showAlert("Кирпич уже в отключке! Жди следующего босса.");
+                return;
+            }
+
+            if (energy >= 5) {
+                energy -= 5;
+                bossHp -= 15; // Урон
+                auth += 3;    // За босса дают больше авторитета
+                
+                // Проигрываем звук (если звук не успел доиграть, начинаем сначала)
+                hitSound.currentTime = 0;
+                hitSound.play().catch(e => console.log("Браузер заблокировал автовоспроизведение звука"));
+
+                // Вибрация от удара (сильная)
+                tg.HapticFeedback.impactOccurred('heavy');
+                
+                // Простенькая анимация (зек дергается при ударе)
+                const zekImg = document.getElementById('zek-image');
+                zekImg.style.transform = "translateX(-50%) scale(1.05)";
+                setTimeout(() => {
+                    zekImg.style.transform = "translateX(-50%) scale(1)";
+                }, 100);
+
+                if (bossHp <= 0) {
+                    bossHp = 0;
+                    cigs += 50; // Награда за убийство босса
+                    tg.showAlert("Красава! Ты завалил Кирпича и получил 50 папирос!");
+                }
+                updateUI();
+            } else {
+                tg.showAlert("Нет сил махать кулаками. Отдохни.");
+            }
+        }
+
+        // Механика: Восстановление энергии
+        setInterval(() => {
+            if (energy < 100) {
+                energy += 1;
+                updateUI();
+            }
+        }, 3000); // Каждые 3 секунды добавляется 1 энергия
     </script>
 </body>
 </html>
